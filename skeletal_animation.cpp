@@ -14,12 +14,13 @@
 
 
 #include <iostream>
+#include <vector>
 
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
-void processInput(GLFWwindow* window, Animator& animator, Animation& anim1, Animation& anim2, Animation& anim3, Animation& anim4, Animation& anim5);
+void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Animation& sprint_forward, Animation& sprint_backward, Animation& strafe_left, Animation& strafe_right, Animation& sprint_forward_left, Animation& sprint_forward_right, Animation& sprint_backward_left, Animation& sprint_backward_right, Animation& firing, Animation& walking_firing);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -43,6 +44,21 @@ float characterSpeed = 2.5f;
 // 3rd person camera settings
 float cameraDistance = 2.0f;   // distance behind character
 float cameraHeight = 1.5f;     // height above character
+
+// bullets and shooting
+struct Bullet {
+    glm::vec3 Position;
+    glm::vec3 Velocity;
+    float Lifetime;
+    bool Active;
+};
+std::vector<Bullet> bullets;
+float fireRateCooldown = 0.0f;
+const float FIRE_COOLDOWN = 0.1f;
+
+// zombie state
+float zombieHealth = 100.0f;
+glm::vec3 zombiePos(-3.0f, -0.4f, 0.0f);
 
 int main()
 {
@@ -92,8 +108,8 @@ int main()
 	// build and compile shaders
 	// -------------------------
 	Shader ourShader("anim_model.vs", "anim_model.fs");
+	Shader zombieShader("anim_model.vs", "anim_model.fs");
 
-	
     // set up simple cube
     float cubeVertices[] = {
         -0.5f, -0.5f, -0.5f,
@@ -153,13 +169,23 @@ int main()
 
 	// load models
 	// -----------
-	Model ourModel(FileSystem::getPath("resources/objects/swat/Ch15_nonPBR.dae"));
+	Model ourModel(FileSystem::getPath("resources/objects/swat/swat.dae"));
 	Animation idle_animation(FileSystem::getPath("resources/objects/swat/Rifle Aiming Idle.dae"), &ourModel);
 	Animation firing_animation(FileSystem::getPath("resources/objects/swat/Firing Rifle.dae"), &ourModel);
 	Animation walking_firing_animation(FileSystem::getPath("resources/objects/swat/Firing Rifle While Walking Forward.dae"), &ourModel);
 	Animation sprint_forward_animation(FileSystem::getPath("resources/objects/swat/Sprint Forward.dae"), &ourModel);
 	Animation sprint_backward_animation(FileSystem::getPath("resources/objects/swat/Sprint Backward.dae"), &ourModel);
+	Animation strafe_left_animation(FileSystem::getPath("resources/objects/swat/Strafe Left.dae"), &ourModel);
+	Animation strafe_right_animation(FileSystem::getPath("resources/objects/swat/Strafe Right.dae"), &ourModel);
+	Animation sprint_forward_left_animation(FileSystem::getPath("resources/objects/swat/Run Forward Left.dae"), &ourModel);
+	Animation sprint_forward_right_animation(FileSystem::getPath("resources/objects/swat/Run Forward Right.dae"), &ourModel);
+	Animation sprint_backward_left_animation(FileSystem::getPath("resources/objects/swat/Run Backward Left.dae"), &ourModel);
+	Animation sprint_backward_right_animation(FileSystem::getPath("resources/objects/swat/Run Backward Right.dae"), &ourModel);
 	Animator animator(&idle_animation);
+
+	Model zombieGirlModel(FileSystem::getPath("resources/objects/zombie/zombie girl.dae"));
+	Animation zombie_idle_animation(FileSystem::getPath("resources/objects/zombie/zombie idle.dae"), &zombieGirlModel);
+	Animator zombieAnimator(&zombie_idle_animation);
 
 	// draw in wireframe
 	//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -176,8 +202,37 @@ int main()
 
 		// input
 		// -----
-		processInput(window, animator, idle_animation, firing_animation, walking_firing_animation, sprint_forward_animation, sprint_backward_animation);
+		processInput(window, animator, idle_animation, sprint_forward_animation, sprint_backward_animation, strafe_left_animation, strafe_right_animation, sprint_forward_left_animation, sprint_forward_right_animation, sprint_backward_left_animation, sprint_backward_right_animation, firing_animation, walking_firing_animation);
 		animator.UpdateAnimation(deltaTime);
+		zombieAnimator.UpdateAnimation(deltaTime);
+
+		// Update cooldown
+		if (fireRateCooldown > 0.0f) {
+			fireRateCooldown -= deltaTime;
+		}
+
+		// Update bullets
+		for (auto& bullet : bullets) {
+			if (!bullet.Active) continue;
+			
+			bullet.Position += bullet.Velocity * deltaTime;
+			bullet.Lifetime -= deltaTime;
+			
+			if (bullet.Lifetime <= 0.0f) {
+				bullet.Active = false;
+				continue;
+			}
+
+			// ZOMBIE COLLISION DETECTION
+			float hitRadius = 1.0f; // Approximate zombie width
+			if (zombieHealth > 0.0f && glm::distance(bullet.Position, zombiePos + glm::vec3(0.0f, 1.0f, 0.0f)) < hitRadius) {
+				bullet.Active = false;
+				zombieHealth -= 10.0f;
+				if (zombieHealth <= 0.0f) {
+					std::cout << "Zombie Died!\n";
+				}
+			}
+		}
 		
 		// Update camera position to follow character (3rd person)
         float yawRadians = glm::radians(characterYaw);
@@ -209,14 +264,36 @@ int main()
 		for (int i = 0; i < transforms.size(); ++i)
 			ourShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
 
-
 		// render the loaded model
 		glm::mat4 model = glm::mat4(1.0f);
 		model = glm::translate(model, characterPosition);
         model = glm::rotate(model, glm::radians(-characterYaw + 90.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotate based on character Yaw
 		model = glm::scale(model, glm::vec3(.5f, .5f, .5f));	// it's a bit too big for our scene, so scale it down
 		ourShader.setMat4("model", model);
+        ourShader.setBool("useSolidColor", false);
 		ourModel.Draw(ourShader);
+
+        // bind zombie shader and set up its matrices
+        zombieShader.use();
+        zombieShader.setMat4("projection", projection);
+        zombieShader.setMat4("view", view);
+        transforms = zombieAnimator.GetFinalBoneMatrices();
+        for (int i = 0; i < transforms.size(); ++i)
+            zombieShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
+
+        model = glm::mat4(1.0f);
+		model = glm::translate(model, zombiePos); // Fixed position to move around
+        model = glm::scale(model, glm::vec3(.5f, .5f, .5f));
+		zombieShader.setMat4("model", model);
+        zombieShader.setBool("useSolidColor", false);
+        if (zombieHealth > 0.0f) {
+		    zombieGirlModel.Draw(zombieShader);
+        }
+        
+        ourShader.use(); // Switch back to ourShader
+        glBindTexture(GL_TEXTURE_2D, 0); // Unbind inherited model textures so bullets look normal
+        ourShader.setBool("useSolidColor", true);
+        ourShader.setVec3("solidColor", glm::vec3(0.5f, 0.5f, 0.5f)); // Grey for reference block
         
         // render cube reference
         glm::mat4 cubeModel = glm::mat4(1.0f);
@@ -225,6 +302,35 @@ int main()
         ourShader.setMat4("model", cubeModel);
         glBindVertexArray(cubeVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // set bright glowing yellow/orange color for bullets
+        ourShader.setVec3("solidColor", glm::vec3(1.0f, 0.8f, 0.2f)); 
+
+        // render bullets
+        for (const auto& bullet : bullets) {
+            if (!bullet.Active) continue;
+            
+            glm::mat4 bulletModel = glm::mat4(1.0f);
+            bulletModel = glm::translate(bulletModel, bullet.Position);
+            
+            // Align bullet with its velocity vector (Tracer effect)
+            glm::vec3 dir = glm::normalize(bullet.Velocity);
+            glm::vec3 right = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), dir));
+            glm::vec3 up = glm::cross(dir, right);
+            
+            glm::mat4 rot(1.0f);
+            rot[0] = glm::vec4(right, 0.0f);
+            rot[1] = glm::vec4(up, 0.0f);
+            rot[2] = glm::vec4(dir, 0.0f);
+            
+            bulletModel *= rot;
+            
+            // Scale to look like a long tracer (thin in width/height, long in travel direction)
+            bulletModel = glm::scale(bulletModel, glm::vec3(0.02f, 0.02f, 1.0f)); 
+            
+            ourShader.setMat4("model", bulletModel);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
 
 
 		// glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
@@ -241,7 +347,7 @@ int main()
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
-void processInput(GLFWwindow* window, Animator& animator, Animation& anim1, Animation& anim2, Animation& anim3, Animation& anim4, Animation& anim5)
+void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Animation& sprint_forward, Animation& sprint_backward, Animation& strafe_left, Animation& strafe_right, Animation& sprint_forward_left, Animation& sprint_forward_right, Animation& sprint_backward_left, Animation& sprint_backward_right, Animation& firing, Animation& walking_firing)
 {
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, true);
@@ -255,31 +361,89 @@ void processInput(GLFWwindow* window, Animator& animator, Animation& anim1, Anim
 
     glm::vec3 moveInput(0.0f);
 
-    // Move character with WASD
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+    // State tracking to prevent restarting animation every frame
+    static Animation* currentAnimation = &idle;
+    Animation* targetAnimation = &idle; // Default to idle if no keys are pressed
+
+    bool w = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
+    bool s = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
+    bool a = glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS;
+    bool d = glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS;
+    bool mouseLeft = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+
+    // Evaluate 8-way movement
+    if (w && a) {
+        moveInput += forward - right;
+        targetAnimation = &sprint_forward_left;
+    } else if (w && d) {
+        moveInput += forward + right;
+        targetAnimation = &sprint_forward_right;
+    } else if (s && a) {
+        moveInput -= forward + right;
+        targetAnimation = &sprint_backward_left;
+    } else if (s && d) {
+        moveInput -= forward - right;
+        targetAnimation = &sprint_backward_right;
+    } else if (w) {
         moveInput += forward;
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        targetAnimation = &sprint_forward;
+    } else if (s) {
         moveInput -= forward;
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        moveInput -= right; // A is left, so negative right
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        targetAnimation = &sprint_backward;
+    } else if (a) {
+        moveInput -= right;
+        targetAnimation = &strafe_left;
+    } else if (d) {
         moveInput += right;
+        targetAnimation = &strafe_right;
+    }
+
+    // Override animation if firing
+    if (mouseLeft) {
+        if (w) targetAnimation = &walking_firing;
+        else if (!w && !a && !s && !d) targetAnimation = &firing;
+        
+        // Firing mechanism
+        if (fireRateCooldown <= 0.0f) {
+            Bullet newBullet;
+            // Spawn bullet roughly at gun height
+            newBullet.Position = characterPosition + glm::vec3(0.0f, 0.2f, 0.0f) + forward * 0.5f; 
+            newBullet.Velocity = forward * 25.0f; // Bullet speed
+            newBullet.Lifetime = 2.0f;
+            newBullet.Active = true;
+            
+            // Reuse an inactive bullet or add a new one
+            bool reused = false;
+            for (auto& b : bullets) {
+                if (!b.Active) {
+                    b = newBullet;
+                    reused = true;
+                    break;
+                }
+            }
+            if (!reused) {
+                bullets.push_back(newBullet);
+            }
+            
+            fireRateCooldown = FIRE_COOLDOWN;
+        }
+    }
 
     if (glm::dot(moveInput, moveInput) > 0.0f)
         moveInput = glm::normalize(moveInput);
 
+    // Make the character move slower when walking forward while firing
+    if (w && mouseLeft) {
+        velocity *= 0.5f; // Reduce speed by half
+    }
+
     characterPosition += moveInput * velocity;
 
-	if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS)
-		animator.PlayAnimation(&anim1);
-	if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS)
-		animator.PlayAnimation(&anim2);
-	if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS)
-		animator.PlayAnimation(&anim3);
-	if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS)
-		animator.PlayAnimation(&anim4);
-	if (glfwGetKey(window, GLFW_KEY_5) == GLFW_PRESS)
-		animator.PlayAnimation(&anim5);
+    // Only play the new animation if the state actually changed
+    if (currentAnimation != targetAnimation) {
+        animator.PlayAnimation(targetAnimation);
+        currentAnimation = targetAnimation;
+    }
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
