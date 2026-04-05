@@ -11,8 +11,6 @@
 #include <learnopengl/animator.h>
 #include <learnopengl/model_animation.h>
 
-
-
 #include <iostream>
 #include <vector>
 
@@ -20,7 +18,7 @@
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
-void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Animation& sprint_forward, Animation& sprint_backward, Animation& strafe_left, Animation& strafe_right, Animation& sprint_forward_left, Animation& sprint_forward_right, Animation& sprint_backward_left, Animation& sprint_backward_right, Animation& firing, Animation& walking_firing);
+void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Animation& sprint_forward, Animation& sprint_backward, Animation& strafe_left, Animation& strafe_right, Animation& sprint_forward_left, Animation& sprint_forward_right, Animation& sprint_backward_left, Animation& sprint_backward_right, Animation& firing, Animation& walking_firing, Animation& stepping_back);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -40,6 +38,7 @@ float lastFrame = 0.0f;
 glm::vec3 characterPosition(0.0f, -0.4f, 0.0f);
 float characterYaw = -90.0f; // facing direction (in degrees)
 float characterSpeed = 2.5f;
+float characterHealth = 100.0f;
 
 // 3rd person camera settings
 float cameraDistance = 2.0f;   // distance behind character
@@ -56,9 +55,124 @@ std::vector<Bullet> bullets;
 float fireRateCooldown = 0.0f;
 const float FIRE_COOLDOWN = 0.1f;
 
-// zombie state
-float zombieHealth = 100.0f;
-glm::vec3 zombiePos(-3.0f, -0.4f, 0.0f);
+enum class ZombieState { Idle, Walking, Attacking, Dead };
+enum class EnemyType { Zombie, Mutant };
+
+struct Enemy {
+    EnemyType Type;
+    float Health;
+    float MaxHealth;
+    float Damage;
+    float Speed;
+    glm::vec3 Position;
+    float Rotation;
+    bool Dead;
+    float DeathTimer;
+    ZombieState State;
+    float AttackCooldown;
+    Animator animator;
+
+    Enemy(EnemyType type, glm::vec3 pos, float health, float damage, float speed, Animation* idleAnim)
+        : Type(type), Position(pos), Health(health), MaxHealth(health), Damage(damage), Speed(speed), 
+          Rotation(1.57f), Dead(false), DeathTimer(0.0f), State(ZombieState::Idle), AttackCooldown(0.0f),
+          animator(idleAnim) {}
+};
+
+std::vector<Enemy> enemies;
+int currentWave = 0;
+int currentScore = 0;
+bool gameWon = false;
+
+const int digitPatterns[10][5][3] = {
+    {{1,1,1}, {1,0,1}, {1,0,1}, {1,0,1}, {1,1,1}}, // 0
+    {{0,1,0}, {1,1,0}, {0,1,0}, {0,1,0}, {1,1,1}}, // 1
+    {{1,1,1}, {0,0,1}, {1,1,1}, {1,0,0}, {1,1,1}}, // 2
+    {{1,1,1}, {0,0,1}, {1,1,1}, {0,0,1}, {1,1,1}}, // 3
+    {{1,0,1}, {1,0,1}, {1,1,1}, {0,0,1}, {0,0,1}}, // 4
+    {{1,1,1}, {1,0,0}, {1,1,1}, {0,0,1}, {1,1,1}}, // 5
+    {{1,1,1}, {1,0,0}, {1,1,1}, {1,0,1}, {1,1,1}}, // 6
+    {{1,1,1}, {0,0,1}, {0,0,1}, {0,0,1}, {0,0,1}}, // 7
+    {{1,1,1}, {1,0,1}, {1,1,1}, {1,0,1}, {1,1,1}}, // 8
+    {{1,1,1}, {1,0,1}, {1,1,1}, {0,0,1}, {1,1,1}}, // 9
+};
+
+const int letterPatterns[26][5][3] = {
+    {{1,1,1},{1,0,1},{1,1,1},{1,0,1},{1,0,1}}, // A
+    {{1,1,0},{1,0,1},{1,1,0},{1,0,1},{1,1,0}}, // B
+    {{1,1,1},{1,0,0},{1,0,0},{1,0,0},{1,1,1}}, // C
+    {{1,1,0},{1,0,1},{1,0,1},{1,0,1},{1,1,0}}, // D
+    {{1,1,1},{1,0,0},{1,1,1},{1,0,0},{1,1,1}}, // E
+    {{1,1,1},{1,0,0},{1,1,1},{1,0,0},{1,0,0}}, // F
+    {{1,1,1},{1,0,0},{1,0,1},{1,0,1},{1,1,1}}, // G
+    {{1,0,1},{1,0,1},{1,1,1},{1,0,1},{1,0,1}}, // H
+    {{1,1,1},{0,1,0},{0,1,0},{0,1,0},{1,1,1}}, // I
+    {{0,0,1},{0,0,1},{0,0,1},{1,0,1},{1,1,1}}, // J
+    {{1,0,1},{1,1,0},{1,0,0},{1,1,0},{1,0,1}}, // K
+    {{1,0,0},{1,0,0},{1,0,0},{1,0,0},{1,1,1}}, // L
+    {{1,1,1},{1,1,1},{1,0,1},{1,0,1},{1,0,1}}, // M
+    {{1,1,1},{1,0,1},{1,0,1},{1,0,1},{1,0,1}}, // N
+    {{1,1,1},{1,0,1},{1,0,1},{1,0,1},{1,1,1}}, // O
+    {{1,1,1},{1,0,1},{1,1,1},{1,0,0},{1,0,0}}, // P
+    {{1,1,1},{1,0,1},{1,0,1},{1,1,1},{0,0,1}}, // Q
+    {{1,1,1},{1,0,1},{1,1,0},{1,0,1},{1,0,1}}, // R
+    {{1,1,1},{1,0,0},{1,1,1},{0,0,1},{1,1,1}}, // S
+    {{1,1,1},{0,1,0},{0,1,0},{0,1,0},{0,1,0}}, // T
+    {{1,0,1},{1,0,1},{1,0,1},{1,0,1},{1,1,1}}, // U
+    {{1,0,1},{1,0,1},{1,0,1},{1,0,1},{0,1,0}}, // V
+    {{1,0,1},{1,0,1},{1,0,1},{1,1,1},{1,1,1}}, // W
+    {{1,0,1},{1,0,1},{1,0,1},{0,1,0},{0,1,0}}, // X
+    {{1,0,1},{1,0,1},{0,1,0},{0,1,0},{0,1,0}}, // Y
+    {{1,1,1},{0,0,1},{0,1,0},{1,0,0},{1,1,1}}  // Z
+};
+
+void drawDigit(int digit, float x, float y, float scale, Shader& shader, unsigned int vao) {
+    for (int row=0; row<5; ++row) {
+        for (int col=0; col<3; ++col) {
+            if (digitPatterns[digit][row][col]) {
+                glm::mat4 model = glm::mat4(1.0f);
+                model = glm::translate(model, glm::vec3(x + col*scale, y - row*scale, 0.0f));
+                model = glm::scale(model, glm::vec3(scale, scale, 0.1f));
+                shader.setMat4("model", model);
+                glBindVertexArray(vao);
+                glDrawArrays(GL_TRIANGLES, 0, 36);
+            }
+        }
+    }
+}
+
+void drawString(const std::string& text, float x, float y, float scale, Shader& shader, unsigned int vao) {
+    for (char c : text) {
+        if (c == ' ') {
+            x += 4.0f * scale; // Spacing for space character
+            continue;
+        }
+        if (c >= '0' && c <= '9') {
+            drawDigit(c - '0', x, y, scale, shader, vao);
+        } else if (c >= 'A' && c <= 'Z') {
+            int letterIdx = c - 'A';
+            for (int row = 0; row < 5; ++row) {
+                for (int col = 0; col < 3; ++col) {
+                    if (letterPatterns[letterIdx][row][col]) {
+                        glm::mat4 model = glm::mat4(1.0f);
+                        model = glm::translate(model, glm::vec3(x + col * scale, y - row * scale, 0.0f));
+                        model = glm::scale(model, glm::vec3(scale, scale, 0.1f));
+                        shader.setMat4("model", model);
+                        glBindVertexArray(vao);
+                        glDrawArrays(GL_TRIANGLES, 0, 36);
+                    }
+                }
+            }
+        }
+        x += 4.0f * scale; // advance cursor
+    }
+}
+
+void drawScore(int score, float startX, float startY, float scale, Shader& shader, unsigned int vao) {
+    shader.setVec3("solidColor", glm::vec3(1.0f, 0.8f, 0.0f)); // Gold color for score
+    std::string s = std::to_string(score);
+    float x = startX - s.length() * (4.0f * scale); // Right align based on string length
+    drawString(s, x, startY, scale, shader, vao);
+}
 
 int main()
 {
@@ -181,11 +295,45 @@ int main()
 	Animation sprint_forward_right_animation(FileSystem::getPath("resources/objects/swat/Run Forward Right.dae"), &ourModel);
 	Animation sprint_backward_left_animation(FileSystem::getPath("resources/objects/swat/Run Backward Left.dae"), &ourModel);
 	Animation sprint_backward_right_animation(FileSystem::getPath("resources/objects/swat/Run Backward Right.dae"), &ourModel);
+	Animation stepping_back_animation(FileSystem::getPath("resources/objects/swat/Stepping Backward.dae"), &ourModel);
 	Animator animator(&idle_animation);
 
 	Model zombieGirlModel(FileSystem::getPath("resources/objects/zombie/zombie girl.dae"));
 	Animation zombie_idle_animation(FileSystem::getPath("resources/objects/zombie/zombie idle.dae"), &zombieGirlModel);
-	Animator zombieAnimator(&zombie_idle_animation);
+	Animation zombie_walk_animation(FileSystem::getPath("resources/objects/zombie/zombie walk.dae"), &zombieGirlModel);
+	Animation zombie_death_animation(FileSystem::getPath("resources/objects/zombie/zombie death.dae"), &zombieGirlModel);
+	Animation zombie_attack_animation(FileSystem::getPath("resources/objects/zombie/zombie attack.dae"), &zombieGirlModel);
+
+    Model mutantModel(FileSystem::getPath("resources/objects/mutant/mutant.dae"));
+    Animation mutant_idle_animation(FileSystem::getPath("resources/objects/mutant/mutant idle.dae"), &mutantModel);
+	Animation mutant_walk_animation(FileSystem::getPath("resources/objects/mutant/mutant run.dae"), &mutantModel);
+	Animation mutant_death_animation(FileSystem::getPath("resources/objects/mutant/mutant dying.dae"), &mutantModel);
+	Animation mutant_attack_animation(FileSystem::getPath("resources/objects/mutant/mutant swiping.dae"), &mutantModel);
+
+    auto spawnWave1 = [&](){
+        enemies.clear();
+        enemies.emplace_back(EnemyType::Zombie, glm::vec3(-3.0f, -0.4f, 0.0f), 100.0f, 10.0f, 0.5f, &zombie_idle_animation);
+        enemies.emplace_back(EnemyType::Zombie, glm::vec3(3.0f, -0.4f, -2.0f), 100.0f, 10.0f, 0.5f, &zombie_idle_animation);
+        enemies.emplace_back(EnemyType::Zombie, glm::vec3(1.0f, -0.4f, 3.0f), 100.0f, 10.0f, 0.5f, &zombie_idle_animation);
+        currentWave = 1;
+    };
+
+    auto spawnWave2 = [&](){
+        enemies.clear();
+        enemies.emplace_back(EnemyType::Mutant, glm::vec3(0.0f, -0.4f, -6.0f), 300.0f, 25.0f, 1.35f, &mutant_idle_animation);
+        currentWave = 2;
+    };
+
+    auto spawnWave3 = [&]() {
+        enemies.clear();
+        enemies.emplace_back(EnemyType::Mutant, glm::vec3(0.0f, -0.4f, -6.0f), 300.0f, 25.0f, 1.35f, &mutant_idle_animation);
+        enemies.emplace_back(EnemyType::Zombie, glm::vec3(-3.0f, -0.4f, 0.0f), 100.0f, 10.0f, 0.5f, &zombie_idle_animation);
+        enemies.emplace_back(EnemyType::Zombie, glm::vec3(3.0f, -0.4f, -2.0f), 100.0f, 10.0f, 0.5f, &zombie_idle_animation);
+        enemies.emplace_back(EnemyType::Zombie, glm::vec3(1.0f, -0.4f, 3.0f), 100.0f, 10.0f, 0.5f, &zombie_idle_animation);
+        currentWave = 3;
+    };
+
+    spawnWave1();
 
 	// draw in wireframe
 	//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -202,14 +350,106 @@ int main()
 
 		// input
 		// -----
-		processInput(window, animator, idle_animation, sprint_forward_animation, sprint_backward_animation, strafe_left_animation, strafe_right_animation, sprint_forward_left_animation, sprint_forward_right_animation, sprint_backward_left_animation, sprint_backward_right_animation, firing_animation, walking_firing_animation);
+		processInput(window, animator, idle_animation, sprint_forward_animation, sprint_backward_animation, strafe_left_animation, strafe_right_animation, sprint_forward_left_animation, sprint_forward_right_animation, sprint_backward_left_animation, sprint_backward_right_animation, firing_animation, walking_firing_animation, stepping_back_animation);
 		animator.UpdateAnimation(deltaTime);
-		zombieAnimator.UpdateAnimation(deltaTime);
+        
+        bool allDead = true;
+        for (auto& enemy : enemies) {
+		    enemy.animator.UpdateAnimation(deltaTime);
+            if (!enemy.Dead || enemy.DeathTimer > 0.0f) {
+                allDead = false;
+            }
+        }
+
+        if (allDead && enemies.size() > 0) {
+            if (currentWave == 1) {
+                spawnWave2();
+            } else if (currentWave == 2) {
+                spawnWave3();
+            }
+            else if (currentWave == 3) {
+                gameWon = true;
+            }
+        }
 
 		// Update cooldown
 		if (fireRateCooldown > 0.0f) {
 			fireRateCooldown -= deltaTime;
 		}
+
+		// Update Enemy AI
+		if (characterHealth > 0.0f && !gameWon) {
+            for (auto& enemy : enemies) {
+                if (enemy.Dead) {
+                    if (enemy.DeathTimer > 0.0f) {
+                        enemy.DeathTimer -= deltaTime;
+                    }
+                    continue;
+                }
+
+			    glm::vec3 diff = characterPosition - enemy.Position;
+			    diff.y = 0.0f; // ignore vertical difference for distance
+			    float dist = glm::length(diff);
+                
+                if (enemy.AttackCooldown > 0.0f) {
+                    enemy.AttackCooldown -= deltaTime;
+                    if (enemy.AttackCooldown <= 0.0f && enemy.State == ZombieState::Attacking) {
+                        if (dist < 2.0f) { // If still in range after finishing the attack swing
+                            characterHealth -= enemy.Damage;
+                            if (characterHealth <= 0.0f) {
+                                characterHealth = 0.0f;
+                                std::cout << "\n============================================\n";
+                                std::cout << "GAME OVER! Do you want to retry or try again?\n";
+                                std::cout << "Press SPACE to try again.\n";
+                                std::cout << "============================================\n\n";
+                            } else {
+                                std::cout << "Character hit! Health: " << characterHealth << "\n";
+                            }
+                        }
+                    }
+                }
+
+                bool lockedInAttack = (enemy.State == ZombieState::Attacking && enemy.AttackCooldown > 0.0f);
+
+                if (!lockedInAttack) {
+			        if (dist < 1.5f) {
+			        	if (enemy.State != ZombieState::Attacking) {
+			        		enemy.State = ZombieState::Attacking;
+			        		enemy.animator.PlayAnimation(enemy.Type == EnemyType::Zombie ? &zombie_attack_animation : &mutant_attack_animation);
+			        	}
+                        // Face character
+                        enemy.Rotation = atan2(diff.x, diff.z);
+			        	enemy.AttackCooldown = 1.6f; // Lock animation length and attack timing
+			        } else if (dist < 10.0f) {
+			        	if (enemy.State != ZombieState::Walking) {
+			        		enemy.State = ZombieState::Walking;
+			        		enemy.animator.PlayAnimation(enemy.Type == EnemyType::Zombie ? &zombie_walk_animation : &mutant_walk_animation);
+			        	}
+			        	// Move towards character
+			        	glm::vec3 dir = diff / dist;
+			        	enemy.Position += dir * enemy.Speed * deltaTime;
+                        enemy.Rotation = atan2(dir.x, dir.z);
+			        } else {
+			        	if (enemy.State != ZombieState::Idle) {
+			        		enemy.State = ZombieState::Idle;
+			        		enemy.animator.PlayAnimation(enemy.Type == EnemyType::Zombie ? &zombie_idle_animation : &mutant_idle_animation);
+			        	}
+			        }
+                }
+            }
+		} else {
+            // Game Over or Win Logic
+            if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+                characterHealth = 100.0f;
+                characterPosition = glm::vec3(0.0f, -0.4f, 0.0f);
+                characterYaw = -90.0f;
+                currentScore = 0;
+                gameWon = false;
+                bullets.clear();
+                spawnWave1();
+                std::cout << "Game Restarted!\n";
+            }
+        }
 
 		// Update bullets
 		for (auto& bullet : bullets) {
@@ -223,15 +463,24 @@ int main()
 				continue;
 			}
 
-			// ZOMBIE COLLISION DETECTION
-			float hitRadius = 1.0f; // Approximate zombie width
-			if (zombieHealth > 0.0f && glm::distance(bullet.Position, zombiePos + glm::vec3(0.0f, 1.0f, 0.0f)) < hitRadius) {
-				bullet.Active = false;
-				zombieHealth -= 10.0f;
-				if (zombieHealth <= 0.0f) {
-					std::cout << "Zombie Died!\n";
-				}
-			}
+			    // ENEMY COLLISION DETECTION
+            for (auto& enemy : enemies) {
+                if (enemy.Dead) continue;
+			    float hitRadius = (enemy.Type == EnemyType::Mutant) ? 1.5f : 1.0f; // Approximate width
+			    if (glm::distance(bullet.Position, enemy.Position + glm::vec3(0.0f, 1.0f, 0.0f)) < hitRadius) {
+			    	bullet.Active = false;
+			    	enemy.Health -= 10.0f;
+			    	if (enemy.Health <= 0.0f) {
+			    		std::cout << "Enemy Died!\n";
+                        currentScore += (enemy.Type == EnemyType::Mutant) ? 50 : 20; // Update score
+                        enemy.Dead = true;
+                        enemy.State = ZombieState::Dead;
+                        enemy.DeathTimer = 2.85f; // Wait for death animation to finish (~3.5 seconds)
+                        enemy.animator.PlayAnimation(enemy.Type == EnemyType::Zombie ? &zombie_death_animation : &mutant_death_animation);
+			    	}
+                    break;
+			    }
+            }
 		}
 		
 		// Update camera position to follow character (3rd person)
@@ -277,34 +526,180 @@ int main()
         zombieShader.use();
         zombieShader.setMat4("projection", projection);
         zombieShader.setMat4("view", view);
-        transforms = zombieAnimator.GetFinalBoneMatrices();
-        for (int i = 0; i < transforms.size(); ++i)
-            zombieShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
 
-        model = glm::mat4(1.0f);
-		model = glm::translate(model, zombiePos); // Fixed position to move around
-        model = glm::scale(model, glm::vec3(.5f, .5f, .5f));
-		zombieShader.setMat4("model", model);
-        zombieShader.setBool("useSolidColor", false);
-        if (zombieHealth > 0.0f) {
-		    zombieGirlModel.Draw(zombieShader);
+        for (auto& enemy : enemies) {
+            if (enemy.Dead && enemy.DeathTimer <= 0.0f) continue;
+
+            auto transforms = enemy.animator.GetFinalBoneMatrices();
+            for (int i = 0; i < transforms.size(); ++i)
+                zombieShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
+
+            model = glm::mat4(1.0f);
+		    model = glm::translate(model, enemy.Position);
+            model = glm::rotate(model, enemy.Rotation, glm::vec3(0.0f, 1.0f, 0.0f));
+            float scale = (enemy.Type == EnemyType::Mutant) ? 0.7f : 0.5f;
+            model = glm::scale(model, glm::vec3(scale, scale, scale));
+		    zombieShader.setMat4("model", model);
+            zombieShader.setBool("useSolidColor", false);
+            
+            if (enemy.Type == EnemyType::Zombie) {
+		        zombieGirlModel.Draw(zombieShader);
+            } else {
+                mutantModel.Draw(zombieShader);
+            }
         }
         
         ourShader.use(); // Switch back to ourShader
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind inherited model textures so bullets look normal
         ourShader.setBool("useSolidColor", true);
-        ourShader.setVec3("solidColor", glm::vec3(0.5f, 0.5f, 0.5f)); // Grey for reference block
         
-        // render cube reference
-        glm::mat4 cubeModel = glm::mat4(1.0f);
-        cubeModel = glm::translate(cubeModel, glm::vec3(3.0f, 0.0f, 0.0f)); // Fixed position to move around
-        cubeModel = glm::scale(cubeModel, glm::vec3(1.0f));
-        ourShader.setMat4("model", cubeModel);
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
+        // Render Enemy Health Bars
+        for (auto& enemy : enemies) {
+            if (enemy.Health > 0.0f) {
+                float healthRatio = enemy.Health / enemy.MaxHealth;
+                
+                glm::mat4 hpModel = glm::mat4(1.0f);
+                float heightOffset = (enemy.Type == EnemyType::Mutant) ? 2.5f : 1.8f;
+                hpModel = glm::translate(hpModel, enemy.Position + glm::vec3(0.0f, heightOffset, 0.0f));
+                
+                // Face camera precisely
+                glm::vec3 dirToCam = glm::normalize(camera.Position - (enemy.Position + glm::vec3(0.0f, heightOffset, 0.0f)));
+                float angle = atan2(dirToCam.x, dirToCam.z);
+                hpModel = glm::rotate(hpModel, angle, glm::vec3(0.0f, 1.0f, 0.0f));
+                
+                // Background (grayish white)
+                glm::mat4 bgModel = glm::scale(hpModel, glm::vec3(1.0f, 0.1f, 0.02f));
+                ourShader.setMat4("model", bgModel);
+                ourShader.setVec3("solidColor", glm::vec3(0.8f, 0.8f, 0.8f));
+                glBindVertexArray(cubeVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 36);
+
+                // Foreground (red)
+                if (healthRatio > 0.0f) {
+                    glm::mat4 fgModel = glm::translate(hpModel, glm::vec3(-0.5f * (1.0f - healthRatio), 0.0f, 0.025f)); 
+                    fgModel = glm::scale(fgModel, glm::vec3(healthRatio * 0.98f, 0.08f, 0.025f));
+                    ourShader.setMat4("model", fgModel);
+                    ourShader.setVec3("solidColor", glm::vec3(1.0f, 0.0f, 0.0f));
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
+            }
+        }
+        
+        // Render Character Health Bar (2D Screen Space UI)
+        if (characterHealth > 0.0f && !gameWon) {
+            float healthRatio = characterHealth / 100.0f;
+            
+            glDisable(GL_DEPTH_TEST); // Ensure UI draws over everything
+            
+            // Switch to orthographic projection for UI
+            glm::mat4 orthoProj = glm::ortho(0.0f, (float)SCR_WIDTH, 0.0f, (float)SCR_HEIGHT);
+            ourShader.setMat4("projection", orthoProj);
+            ourShader.setMat4("view", glm::mat4(1.0f));
+            
+            float barWidth = 400.0f;
+            float barHeight = 20.0f;
+            float xPos = SCR_WIDTH / 2.0f;
+            float yPos = SCR_HEIGHT - 30.0f;
+
+            glm::mat4 charHpModel = glm::mat4(1.0f);
+            charHpModel = glm::translate(charHpModel, glm::vec3(xPos, yPos, 0.0f));
+            
+            // Background (grayish white)
+            glm::mat4 bgModel = glm::scale(charHpModel, glm::vec3(barWidth, barHeight, 0.1f));
+            ourShader.setMat4("model", bgModel);
+            ourShader.setVec3("solidColor", glm::vec3(0.8f, 0.8f, 0.8f));
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // Foreground (green)
+            if (healthRatio > 0.0f) {
+                float fgWidth = barWidth * healthRatio;
+                // Shift to align left edge
+                glm::mat4 fgModel = glm::translate(charHpModel, glm::vec3(-0.5f * (barWidth - fgWidth), 0.0f, 0.0f)); 
+                fgModel = glm::scale(fgModel, glm::vec3(fgWidth, barHeight, 0.1f));
+                ourShader.setMat4("model", fgModel);
+                ourShader.setVec3("solidColor", glm::vec3(0.0f, 0.8f, 0.2f)); // Greenish health
+                glDrawArrays(GL_TRIANGLES, 0, 36);
+            }
+            
+            glEnable(GL_DEPTH_TEST);
+            
+            // Restore perspective projection for further 3D rendering
+            ourShader.setMat4("projection", projection);
+            ourShader.setMat4("view", view);
+        } else if (characterHealth <= 0.0f) {
+            // Draw big red overlay to symbolise Game Over
+            glDisable(GL_DEPTH_TEST);
+            glm::mat4 orthoProj = glm::ortho(0.0f, (float)SCR_WIDTH, 0.0f, (float)SCR_HEIGHT);
+            ourShader.setMat4("projection", orthoProj);
+            ourShader.setMat4("view", glm::mat4(1.0f));
+            
+            glm::mat4 bgModel = glm::mat4(1.0f);
+            bgModel = glm::translate(bgModel, glm::vec3(SCR_WIDTH / 2.0f, SCR_HEIGHT / 2.0f, 0.0f));
+            bgModel = glm::scale(bgModel, glm::vec3(SCR_WIDTH, SCR_HEIGHT, 0.1f));
+            ourShader.setMat4("model", bgModel);
+            ourShader.setVec3("solidColor", glm::vec3(0.4f, 0.0f, 0.0f)); // Dark red
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            
+            // Draw text overlay
+            ourShader.setVec3("solidColor", glm::vec3(1.0f, 1.0f, 1.0f)); // White text
+            float goScale = 8.0f;
+            float goWidth = 9.0f * (4.0f * goScale); // "GAME OVER" length
+            drawString("GAME OVER", (SCR_WIDTH - goWidth) / 2.0f, SCR_HEIGHT / 2.0f + 50.0f, goScale, ourShader, cubeVAO);
+            
+            ourShader.setVec3("solidColor", glm::vec3(0.8f, 0.8f, 0.8f)); // Grey sub-text
+            float psScale = 4.0f;
+            float psWidth = 11.0f * (4.0f * psScale); // "PRESS SPACE" length
+            drawString("PRESS SPACE", (SCR_WIDTH - psWidth) / 2.0f, SCR_HEIGHT / 2.0f - 50.0f, psScale, ourShader, cubeVAO);
+
+            glEnable(GL_DEPTH_TEST);
+            ourShader.setMat4("projection", projection);
+            ourShader.setMat4("view", view);
+        } else if (gameWon) {
+            // Draw big green overlay to symbolise You Win
+            glDisable(GL_DEPTH_TEST);
+            glm::mat4 orthoProj = glm::ortho(0.0f, (float)SCR_WIDTH, 0.0f, (float)SCR_HEIGHT);
+            ourShader.setMat4("projection", orthoProj);
+            ourShader.setMat4("view", glm::mat4(1.0f));
+            
+            glm::mat4 bgModel = glm::mat4(1.0f);
+            bgModel = glm::translate(bgModel, glm::vec3(SCR_WIDTH / 2.0f, SCR_HEIGHT / 2.0f, 0.0f));
+            bgModel = glm::scale(bgModel, glm::vec3(SCR_WIDTH, SCR_HEIGHT, 0.1f));
+            ourShader.setMat4("model", bgModel);
+            ourShader.setVec3("solidColor", glm::vec3(0.0f, 0.4f, 0.0f)); // Dark green
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            
+            // Draw text overlay
+            ourShader.setVec3("solidColor", glm::vec3(1.0f, 1.0f, 1.0f)); // White text
+            float ywScale = 8.0f;
+            float ywWidth = 7.0f * (4.0f * ywScale); // "YOU WIN" length
+            drawString("YOU WIN", (SCR_WIDTH - ywWidth) / 2.0f, SCR_HEIGHT / 2.0f + 50.0f, ywScale, ourShader, cubeVAO);
+            
+            ourShader.setVec3("solidColor", glm::vec3(0.8f, 0.8f, 0.8f)); // Grey sub-text
+            float psScale = 4.0f;
+            float psWidth = 11.0f * (4.0f * psScale); // "PRESS SPACE" length
+            drawString("PRESS SPACE", (SCR_WIDTH - psWidth) / 2.0f, SCR_HEIGHT / 2.0f - 50.0f, psScale, ourShader, cubeVAO);
+
+            glEnable(GL_DEPTH_TEST);
+            ourShader.setMat4("projection", projection);
+            ourShader.setMat4("view", view);
+        }
+
+        // Render Score Geometry (Top Right)
+        glDisable(GL_DEPTH_TEST);
+        glm::mat4 orthoProjTitle = glm::ortho(0.0f, (float)SCR_WIDTH, 0.0f, (float)SCR_HEIGHT);
+        ourShader.setMat4("projection", orthoProjTitle);
+        ourShader.setMat4("view", glm::mat4(1.0f));
+        drawScore(currentScore, SCR_WIDTH - 20.0f, SCR_HEIGHT - 20.0f, 6.0f, ourShader, cubeVAO);
+        glEnable(GL_DEPTH_TEST);
+        ourShader.setMat4("projection", projection);
+        ourShader.setMat4("view", view);
 
         // set bright glowing yellow/orange color for bullets
         ourShader.setVec3("solidColor", glm::vec3(1.0f, 0.8f, 0.2f)); 
+        glBindVertexArray(cubeVAO);
 
         // render bullets
         for (const auto& bullet : bullets) {
@@ -347,10 +742,13 @@ int main()
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
-void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Animation& sprint_forward, Animation& sprint_backward, Animation& strafe_left, Animation& strafe_right, Animation& sprint_forward_left, Animation& sprint_forward_right, Animation& sprint_backward_left, Animation& sprint_backward_right, Animation& firing, Animation& walking_firing)
+void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Animation& sprint_forward, Animation& sprint_backward, Animation& strafe_left, Animation& strafe_right, Animation& sprint_forward_left, Animation& sprint_forward_right, Animation& sprint_backward_left, Animation& sprint_backward_right, Animation& firing, Animation& walking_firing, Animation& stepping_back)
 {
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, true);
+
+    if (characterHealth <= 0.0f || gameWon)
+        return;
 
     float velocity = characterSpeed * deltaTime;
     
@@ -401,6 +799,7 @@ void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Anima
     // Override animation if firing
     if (mouseLeft) {
         if (w) targetAnimation = &walking_firing;
+        else if (s) targetAnimation = &stepping_back;
         else if (!w && !a && !s && !d) targetAnimation = &firing;
         
         // Firing mechanism
@@ -432,8 +831,8 @@ void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Anima
     if (glm::dot(moveInput, moveInput) > 0.0f)
         moveInput = glm::normalize(moveInput);
 
-    // Make the character move slower when walking forward while firing
-    if (w && mouseLeft) {
+    // Make the character move slower when walking/stepping backward while firing
+    if ((w || s) && mouseLeft) {
         velocity *= 0.5f; // Reduce speed by half
     }
 
