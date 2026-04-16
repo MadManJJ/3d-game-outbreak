@@ -18,7 +18,7 @@
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
-void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Animation& sprint_forward, Animation& sprint_backward, Animation& strafe_left, Animation& strafe_right, Animation& sprint_forward_left, Animation& sprint_forward_right, Animation& sprint_backward_left, Animation& sprint_backward_right, Animation& firing, Animation& walking_firing, Animation& stepping_back);
+void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Animation& sprint_forward, Animation& sprint_backward, Animation& strafe_left, Animation& strafe_right, Animation& sprint_forward_left, Animation& sprint_forward_right, Animation& sprint_backward_left, Animation& sprint_backward_right, Animation& firing, Animation& walking_firing, Animation& stepping_back, Animation& crouch_idle);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -296,6 +296,7 @@ int main()
 	Animation sprint_backward_left_animation(FileSystem::getPath("resources/objects/swat/Run Backward Left.dae"), &ourModel);
 	Animation sprint_backward_right_animation(FileSystem::getPath("resources/objects/swat/Run Backward Right.dae"), &ourModel);
 	Animation stepping_back_animation(FileSystem::getPath("resources/objects/swat/Stepping Backward.dae"), &ourModel);
+	Animation crouch_idle_animation(FileSystem::getPath("resources/objects/swat/Crouch Idle.dae"), &ourModel);
 	Animator animator(&idle_animation);
 
 	Model zombieGirlModel(FileSystem::getPath("resources/objects/zombie/zombie girl.dae"));
@@ -350,7 +351,7 @@ int main()
 
 		// input
 		// -----
-		processInput(window, animator, idle_animation, sprint_forward_animation, sprint_backward_animation, strafe_left_animation, strafe_right_animation, sprint_forward_left_animation, sprint_forward_right_animation, sprint_backward_left_animation, sprint_backward_right_animation, firing_animation, walking_firing_animation, stepping_back_animation);
+		processInput(window, animator, idle_animation, sprint_forward_animation, sprint_backward_animation, strafe_left_animation, strafe_right_animation, sprint_forward_left_animation, sprint_forward_right_animation, sprint_backward_left_animation, sprint_backward_right_animation, firing_animation, walking_firing_animation, stepping_back_animation, crouch_idle_animation);
 		animator.UpdateAnimation(deltaTime);
         
         bool allDead = true;
@@ -361,7 +362,7 @@ int main()
             }
         }
 
-        if (allDead && enemies.size() > 0) {
+   /*     if (allDead && enemies.size() > 0) {
             if (currentWave == 1) {
                 spawnWave2();
             } else if (currentWave == 2) {
@@ -370,7 +371,7 @@ int main()
             else if (currentWave == 3) {
                 gameWon = true;
             }
-        }
+        }*/
 
 		// Update cooldown
 		if (fireRateCooldown > 0.0f) {
@@ -742,7 +743,7 @@ int main()
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
-void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Animation& sprint_forward, Animation& sprint_backward, Animation& strafe_left, Animation& strafe_right, Animation& sprint_forward_left, Animation& sprint_forward_right, Animation& sprint_backward_left, Animation& sprint_backward_right, Animation& firing, Animation& walking_firing, Animation& stepping_back)
+void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Animation& sprint_forward, Animation& sprint_backward, Animation& strafe_left, Animation& strafe_right, Animation& sprint_forward_left, Animation& sprint_forward_right, Animation& sprint_backward_left, Animation& sprint_backward_right, Animation& firing, Animation& walking_firing, Animation& stepping_back, Animation& crouch_idle)
 {
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, true);
@@ -768,9 +769,12 @@ void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Anima
     bool a = glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS;
     bool d = glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS;
     bool mouseLeft = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    bool ctrl = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
 
     // Evaluate 8-way movement
-    if (w && a) {
+    if (ctrl) {
+        targetAnimation = &crouch_idle;
+    } else if (w && a) {
         moveInput += forward - right;
         targetAnimation = &sprint_forward_left;
     } else if (w && d) {
@@ -798,7 +802,8 @@ void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Anima
 
     // Override animation if firing
     if (mouseLeft) {
-        if (w) targetAnimation = &walking_firing;
+        if (ctrl) targetAnimation = &crouch_idle;
+        else if (w) targetAnimation = &walking_firing;
         else if (s) targetAnimation = &stepping_back;
         else if (!w && !a && !s && !d) targetAnimation = &firing;
         
