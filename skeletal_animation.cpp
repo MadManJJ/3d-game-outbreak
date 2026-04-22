@@ -362,7 +362,7 @@ int main()
             }
         }
 
-   /*     if (allDead && enemies.size() > 0) {
+        if (allDead && enemies.size() > 0) {
             if (currentWave == 1) {
                 spawnWave2();
             } else if (currentWave == 2) {
@@ -371,7 +371,7 @@ int main()
             else if (currentWave == 3) {
                 gameWon = true;
             }
-        }*/
+        }
 
 		// Update cooldown
 		if (fireRateCooldown > 0.0f) {
@@ -722,7 +722,7 @@ int main()
             bulletModel *= rot;
             
             // Scale to look like a long tracer (thin in width/height, long in travel direction)
-            bulletModel = glm::scale(bulletModel, glm::vec3(0.02f, 0.02f, 1.0f)); 
+            bulletModel = glm::scale(bulletModel, glm::vec3(0.01f, 0.015f, 0.5f)); 
             
             ourShader.setMat4("model", bulletModel);
             glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -813,7 +813,7 @@ void processInput(GLFWwindow* window, Animator& animator, Animation& idle, Anima
             // Spawn bullet roughly at gun height
             newBullet.Position = characterPosition + glm::vec3(0.0f, 0.2f, 0.0f) + forward * 0.5f; 
             newBullet.Velocity = forward * 25.0f; // Bullet speed
-            newBullet.Lifetime = 2.0f;
+            newBullet.Lifetime = 0.8f;
             newBullet.Active = true;
             
             // Reuse an inactive bullet or add a new one
