@@ -8,8 +8,10 @@
 #include <learnopengl/filesystem.h>
 #include <learnopengl/shader_m.h>
 #include <learnopengl/camera.h>
-#include <learnopengl/animator.h>
 #include <learnopengl/model_animation.h>
+#include <learnopengl/animator.h>
+#include <learnopengl/animation.h>
+#include <C:\dev\github\LearnOpenGL\src\8.guest\2020\skeletal_animation\learnopengl\model_static.h>  
 
 #include <iostream>
 #include <vector>
@@ -223,6 +225,7 @@ int main()
 	// -------------------------
 	Shader ourShader("anim_model.vs", "anim_model.fs");
 	Shader zombieShader("anim_model.vs", "anim_model.fs");
+    Shader staticShader("1.model_loading.vs", "1.model_loading.fs");
 
     // set up simple cube
     float cubeVertices[] = {
@@ -283,6 +286,11 @@ int main()
 
 	// load models
 	// -----------
+    ModelStatic apartmentModel(FileSystem::getPath("resources/objects/apartment/model.obj"));
+
+    const glm::vec3 apartmentPosition(0.0f, 0.0f, 0.0f);
+    const glm::vec3 apartmentScale(20.0f, 20.0f, 20.0f);
+
 	Model ourModel(FileSystem::getPath("resources/objects/swat/swat.dae"));
 	Animation idle_animation(FileSystem::getPath("resources/objects/swat/Rifle Aiming Idle.dae"), &ourModel);
 	Animation firing_animation(FileSystem::getPath("resources/objects/swat/Firing Rifle.dae"), &ourModel);
@@ -501,12 +509,24 @@ int main()
 		glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // view/projection transformations
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+        glm::mat4 view = glm::lookAt(camera.Position, lookTarget, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // render the apartment model
+        staticShader.use();
+        staticShader.setMat4("projection", projection);
+        staticShader.setMat4("view", view);
+
+        glm::mat4 apartmentWorld = glm::mat4(1.0f);
+        apartmentWorld = glm::translate(apartmentWorld, apartmentPosition);
+        apartmentWorld = glm::scale(apartmentWorld, apartmentScale);
+        staticShader.setMat4("model", apartmentWorld);
+        apartmentModel.Draw(staticShader);
+
 		// don't forget to enable shader before setting uniforms
 		ourShader.use();
 
-		// view/projection transformations
-		glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-		glm::mat4 view = glm::lookAt(camera.Position, lookTarget, glm::vec3(0.0f, 1.0f, 0.0f));
 		ourShader.setMat4("projection", projection);
 		ourShader.setMat4("view", view);
 
