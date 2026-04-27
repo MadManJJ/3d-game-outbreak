@@ -289,23 +289,25 @@ int main()
     ModelStatic apartmentModel(FileSystem::getPath("resources/objects/apartment/model.obj"));
 
     const glm::vec3 apartmentPosition(0.0f, 0.0f, 0.0f);
-    const glm::vec3 apartmentScale(20.0f, 20.0f, 20.0f);
+    const glm::vec3 apartmentScale(1.0f, 1.0f, 1.0f);
 
-	Model ourModel(FileSystem::getPath("resources/objects/swat/swat.dae"));
-	Animation idle_animation(FileSystem::getPath("resources/objects/swat/Rifle Aiming Idle.dae"), &ourModel);
-	Animation firing_animation(FileSystem::getPath("resources/objects/swat/Firing Rifle.dae"), &ourModel);
-	Animation walking_firing_animation(FileSystem::getPath("resources/objects/swat/Firing Rifle While Walking Forward.dae"), &ourModel);
-	Animation sprint_forward_animation(FileSystem::getPath("resources/objects/swat/Sprint Forward.dae"), &ourModel);
-	Animation sprint_backward_animation(FileSystem::getPath("resources/objects/swat/Sprint Backward.dae"), &ourModel);
-	Animation strafe_left_animation(FileSystem::getPath("resources/objects/swat/Strafe Left.dae"), &ourModel);
-	Animation strafe_right_animation(FileSystem::getPath("resources/objects/swat/Strafe Right.dae"), &ourModel);
-	Animation sprint_forward_left_animation(FileSystem::getPath("resources/objects/swat/Run Forward Left.dae"), &ourModel);
-	Animation sprint_forward_right_animation(FileSystem::getPath("resources/objects/swat/Run Forward Right.dae"), &ourModel);
-	Animation sprint_backward_left_animation(FileSystem::getPath("resources/objects/swat/Run Backward Left.dae"), &ourModel);
-	Animation sprint_backward_right_animation(FileSystem::getPath("resources/objects/swat/Run Backward Right.dae"), &ourModel);
-	Animation stepping_back_animation(FileSystem::getPath("resources/objects/swat/Stepping Backward.dae"), &ourModel);
-	Animation crouch_idle_animation(FileSystem::getPath("resources/objects/swat/Crouch Idle.dae"), &ourModel);
-	Animator animator(&idle_animation);
+	ModelStatic gunModel(FileSystem::getPath("resources/objects/player/gun/gun.obj"));
+
+	Model playerModel(FileSystem::getPath("resources/objects/player/player.dae"));
+    Animation idle_animation_player(FileSystem::getPath("resources/objects/player/Idle.dae"), &playerModel);
+    Animation firing_animation_player(FileSystem::getPath("resources/objects/player/Firing Rifle.dae"), &playerModel);
+    Animation walking_firing_animation_player(FileSystem::getPath("resources/objects/player/Walking Firing Rifle.dae"), &playerModel);
+    Animation sprint_forward_animation_player(FileSystem::getPath("resources/objects/player/Sprint Forward.dae"), &playerModel);
+    Animation sprint_backward_animation_player(FileSystem::getPath("resources/objects/player/Sprint Backward.dae"), &playerModel);
+    Animation strafe_left_animation_player(FileSystem::getPath("resources/objects/player/Strafe Left.dae"), &playerModel);
+    Animation strafe_right_animation_player(FileSystem::getPath("resources/objects/player/Strafe Right.dae"), &playerModel);
+    Animation sprint_forward_left_animation_player(FileSystem::getPath("resources/objects/player/Sprint Forward Left.dae"), &playerModel);
+    Animation sprint_forward_right_animation_player(FileSystem::getPath("resources/objects/player/Sprint Forward Right.dae"), &playerModel);
+    Animation sprint_backward_left_animation_player(FileSystem::getPath("resources/objects/player/Sprint Backward Left.dae"), &playerModel);
+    Animation sprint_backward_right_animation_player(FileSystem::getPath("resources/objects/player/Sprint Backward Right.dae"), &playerModel);
+    Animation stepping_back_animation_player(FileSystem::getPath("resources/objects/player/Stepping Backward.dae"), &playerModel);
+    Animation crouch_idle_animation_player(FileSystem::getPath("resources/objects/player/Crouch Idle.dae"), &playerModel);	
+    Animator playerAnimator(&idle_animation_player);
 
 	Model zombieGirlModel(FileSystem::getPath("resources/objects/zombie/zombie girl.dae"));
 	Animation zombie_idle_animation(FileSystem::getPath("resources/objects/zombie/zombie idle.dae"), &zombieGirlModel);
@@ -359,8 +361,8 @@ int main()
 
 		// input
 		// -----
-		processInput(window, animator, idle_animation, sprint_forward_animation, sprint_backward_animation, strafe_left_animation, strafe_right_animation, sprint_forward_left_animation, sprint_forward_right_animation, sprint_backward_left_animation, sprint_backward_right_animation, firing_animation, walking_firing_animation, stepping_back_animation, crouch_idle_animation);
-		animator.UpdateAnimation(deltaTime);
+		processInput(window, playerAnimator, idle_animation_player, sprint_forward_animation_player, sprint_backward_animation_player, strafe_left_animation_player, strafe_right_animation_player, sprint_forward_left_animation_player, sprint_forward_right_animation_player, sprint_backward_left_animation_player, sprint_backward_right_animation_player, firing_animation_player, walking_firing_animation_player, stepping_back_animation_player, crouch_idle_animation_player);
+		playerAnimator.UpdateAnimation(deltaTime);
         
         bool allDead = true;
         for (auto& enemy : enemies) {
@@ -524,13 +526,12 @@ int main()
         staticShader.setMat4("model", apartmentWorld);
         apartmentModel.Draw(staticShader);
 
-		// don't forget to enable shader before setting uniforms
+        // don't forget to enable shader before setting uniforms
 		ourShader.use();
-
 		ourShader.setMat4("projection", projection);
 		ourShader.setMat4("view", view);
 
-        auto transforms = animator.GetFinalBoneMatrices();
+        auto transforms = playerAnimator.GetFinalBoneMatrices();
 		for (int i = 0; i < transforms.size(); ++i)
 			ourShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
 
@@ -538,10 +539,27 @@ int main()
 		glm::mat4 model = glm::mat4(1.0f);
 		model = glm::translate(model, characterPosition);
         model = glm::rotate(model, glm::radians(-characterYaw + 90.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // Rotate based on character Yaw
-		model = glm::scale(model, glm::vec3(.5f, .5f, .5f));	// it's a bit too big for our scene, so scale it down
+		model = glm::scale(model, glm::vec3(50.0f, 50.0f, 50.0f));	// Scale Player appropriately
 		ourShader.setMat4("model", model);
         ourShader.setBool("useSolidColor", false);
-		ourModel.Draw(ourShader);
+		playerModel.Draw(ourShader);
+
+        // draw the gun attached to the right hand
+        glm::mat4 rightHandTransform = playerAnimator.GetGlobalTransform("mixamorig_RightHand");
+        glm::mat4 gunModelMatrix = model * rightHandTransform;
+        
+        // Adjust the gun relative to the bone
+        // You might need to tweak these scale/rotate/translate values to make it fit perfectly
+        // Apply translations and rotations BEFORE scaling to accurately offset it from the hand
+        gunModelMatrix = glm::translate(gunModelMatrix, glm::vec3(0.0f, 0.1f, 0.0f)); // Move it into the palm
+        gunModelMatrix = glm::rotate(gunModelMatrix, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, -0.001f)); // Pitch to aim forward
+        gunModelMatrix = glm::rotate(gunModelMatrix, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // Yaw to align grip
+        gunModelMatrix = glm::rotate(gunModelMatrix, glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)); // Roll to align grip
+        gunModelMatrix = glm::scale(gunModelMatrix, glm::vec3(0.002f, 0.002f, 0.002f)); // Scale it way down!
+
+        staticShader.use();
+        staticShader.setMat4("model", gunModelMatrix);
+        gunModel.Draw(staticShader);
 
         // bind zombie shader and set up its matrices
         zombieShader.use();
