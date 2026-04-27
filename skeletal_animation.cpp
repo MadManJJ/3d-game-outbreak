@@ -16,7 +16,6 @@
 #include <iostream>
 #include <vector>
 
-
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
@@ -282,14 +281,16 @@ int main()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
     glVertexAttribI4i(5, 100, 0, 0, 0); // boneIds default
-    glVertexAttrib4f(6, 1.0f, 0.0f, 0.0f, 0.0f); // weights default
+    glVertexAttrib4f(6, 1.0f, 0.0f, 0.0f, 0.0f); // weights default 
 
 	// load models
 	// -----------
-    ModelStatic apartmentModel(FileSystem::getPath("resources/objects/apartment/model.obj"));
+    stbi_set_flip_vertically_on_load(false);
+    ModelStatic apartmentModel(FileSystem::getPath("resources/objects/arena/arena.obj"));
+    stbi_set_flip_vertically_on_load(true);
 
-    const glm::vec3 apartmentPosition(0.0f, 0.0f, 0.0f);
-    const glm::vec3 apartmentScale(1.0f, 1.0f, 1.0f);
+    const glm::vec3 apartmentPosition(0.0f, -2.5f, 0.0f);
+    const glm::vec3 apartmentScale(40.0f, 20.0f, 40.0f);
 
 	ModelStatic gunModel(FileSystem::getPath("resources/objects/player/gun/gun.obj"));
 
@@ -348,6 +349,9 @@ int main()
 
 	// draw in wireframe
 	//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+	// initialize lastFrame right before the render loop to prevent a massive deltaTime on the first frame due to model loading times.
+	lastFrame = glfwGetTime();
 
 	// render loop
 	// -----------
@@ -524,7 +528,9 @@ int main()
         apartmentWorld = glm::translate(apartmentWorld, apartmentPosition);
         apartmentWorld = glm::scale(apartmentWorld, apartmentScale);
         staticShader.setMat4("model", apartmentWorld);
+        glDisable(GL_CULL_FACE);
         apartmentModel.Draw(staticShader);
+        glEnable(GL_CULL_FACE);
 
         // don't forget to enable shader before setting uniforms
 		ourShader.use();
@@ -736,8 +742,8 @@ int main()
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
-        // set bright glowing yellow/orange color for bullets
-        ourShader.setVec3("solidColor", glm::vec3(1.0f, 0.8f, 0.2f)); 
+        // set bright glowing full yellow color for bullets
+        ourShader.setVec3("solidColor", glm::vec3(1.0f, 1.0f, 0.0f)); 
         glBindVertexArray(cubeVAO);
 
         // render bullets
@@ -760,7 +766,7 @@ int main()
             bulletModel *= rot;
             
             // Scale to look like a long tracer (thin in width/height, long in travel direction)
-            bulletModel = glm::scale(bulletModel, glm::vec3(0.01f, 0.015f, 0.5f)); 
+            bulletModel = glm::scale(bulletModel, glm::vec3(0.1f, 0.1f, 0.5f)); 
             
             ourShader.setMat4("model", bulletModel);
             glDrawArrays(GL_TRIANGLES, 0, 36);
